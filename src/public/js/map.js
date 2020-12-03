@@ -1,5 +1,54 @@
 window.onload = function () {
 
+    /**
+    *  MQTT
+    */
+
+    // Create a client instance
+    client = new Paho.MQTT.Client('localHost', 9001, '', 'browsermap');
+
+    // set callback handlers
+    client.onConnectionLost = onConnectionLost;
+    client.onMessageArrived = onMessageArrived;
+
+    // connect the client
+    client.connect({ onSuccess: onConnect });
+
+
+    // called when the client connects
+    function onConnect() {
+        // Once a connection has been made, make a subscription and send a message.
+        console.log("onConnect");
+        client.subscribe('map');
+        messageToSend = new Paho.MQTT.Message("Connected from the browser");
+        messageToSend.destinationName = "World";
+        client.send(messageToSend);
+        console.log("Sent Message")
+    }
+
+    // called when the client loses its connection
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            console.log("onConnectionLost:" + responseObject.errorMessage);
+        }
+    }
+
+    // called when a message arrives
+    function onMessageArrived(message) {
+        console.log("onMessageArrived:" + message.payloadString);
+    }
+
+    function sendMQTTMessage(messageString) {
+        message = new Paho.MQTT.Message("Hello for the browser");
+        message.destinationName = "Direction";
+        client.send(message);
+    }
+
+
+    /**
+     *  Map
+     */
+
     var locations = [
         { latLng: { lat: null, lng: null } },
         { latLng: { lat: null, lng: null } }
@@ -60,7 +109,7 @@ window.onload = function () {
 
         map.addLayer(myLayer);
 
-        $.post("/map", { "location": locations });
+        sendMQTTMessage(locations);
     }
 
     map.on('click', function (event) {
