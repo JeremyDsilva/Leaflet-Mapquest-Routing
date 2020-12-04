@@ -1,11 +1,31 @@
 window.onload = function () {
 
+    {
+        let user_message = "Hello " + getCookieValue('username') + "!";
+        let date = decodeURI(getCookieValue('date'))
+
+        if(date != '') // cookie exist. User has visited before.
+            user_message += " You last visited on " + date;
+        
+        $('#user_message').text(user_message)
+    }
+
     /**
-    *  MQTT
-    */
+     * MQTT
+     */
+
+    const mqttConfig = {
+        "host": "localHost",
+        "port": 443,
+        "url": '',
+        "topic": {
+            "subscribe": "direction",
+            "publish": "map"
+        }
+    }
 
     // Create a client instance
-    client = new Paho.MQTT.Client('localHost', 9001, '', 'browsermap');
+    client = new Paho.MQTT.Client(mqttConfig.host, mqttConfig.port, mqttConfig.url, '');
 
     // set callback handlers
     client.onConnectionLost = onConnectionLost;
@@ -14,16 +34,15 @@ window.onload = function () {
     // connect the client
     client.connect({ onSuccess: onConnect });
 
-
     // called when the client connects
     function onConnect() {
         // Once a connection has been made, make a subscription and send a message.
         console.log("onConnect");
-        client.subscribe('map');
+        client.subscribe(mqttConfig.topic.subscribe);
+
         messageToSend = new Paho.MQTT.Message("Connected from the browser");
-        messageToSend.destinationName = "World";
+        messageToSend.destinationName = "config";
         client.send(messageToSend);
-        console.log("Sent Message")
     }
 
     // called when the client loses its connection
@@ -36,22 +55,27 @@ window.onload = function () {
     // called when a message arrives
     function onMessageArrived(message) {
         console.log("onMessageArrived:" + message.payloadString);
+        if (locations[1].lat != null) // if i get a message on direction channel publish locations on map if locations exist. This is in the case the arrow is just coming up online
+            sendMQTTMessage(JSON.stringify(
+                {
+                    useremail: getCookieValue('useremail'),
+                    location: locations
+                }));
     }
 
     function sendMQTTMessage(messageString) {
-        message = new Paho.MQTT.Message("Hello for the browser");
-        message.destinationName = "Direction";
+        message = new Paho.MQTT.Message(messageString);
+        message.destinationName = mqttConfig.topic.publish;
         client.send(message);
     }
 
-
     /**
-     *  Map
+     * Map
      */
 
     var locations = [
-        { latLng: { lat: null, lng: null } },
-        { latLng: { lat: null, lng: null } }
+        { lat: null, lng: null },
+        { lat: null, lng: null }
     ];
 
     var myLayer = null;
@@ -68,19 +92,17 @@ window.onload = function () {
     map.on('locationfound', function onLocationFound(e) {
         var radius = e.accuracy;
 
-        locations[0].latLng.lat = e.latlng.lat;
-        locations[0].latLng.lng = e.latlng.lng;
+        if (locations[0].lat == e.latlng.lat && locations[0].lng == e.latlng.lng) // same location
+            return;
 
-        if (locations[1].latLng.lat != null) {
+        locations[0].lat = e.latlng.lat;
+        locations[0].lng = e.latlng.lng;
+
+        if (locations[1].lat != null)
             updateRoute();
-        }
 
-        if (popup != null && map.hasLayer(popup)) {
+        if (popup != null && map.hasLayer(popup))
             map.removeLayer(popup)
-        }
-        // marker = L.popup(e.latlng);
-        // marker.addTo(map)
-        //     .bindPopup("You are within " + radius + " meters from this point").openPopup();
 
         popup = L.popup({ offset: L.point(20, 30) }).setLatLng(e.latlng).setContent("You are within " + radius + " meters from this point");
         popup.openOn(map);
@@ -99,7 +121,12 @@ window.onload = function () {
 
         var dir = MQ.routing.directions();
 
-        dir.route({ locations });
+        dir.route({
+            locations: [
+                { latLng: locations[0] },
+                { latLng: locations[1] }
+            ]
+        });
 
         myLayer = MQ.routing.routeLayer({
             directions: dir,
@@ -109,19 +136,23 @@ window.onload = function () {
 
         map.addLayer(myLayer);
 
-        sendMQTTMessage(locations);
+        sendMQTTMessage(JSON.stringify(
+            {
+                useremail: getCookieValue('useremail'),
+                location: locations
+            }));
     }
 
     map.on('click', function (event) {
         console.log("click")
 
-        if (locations[1].latLng.lat != null)
+        if (locations[1].lat != null)
             return;
 
         console.log(event)
 
-        locations[1].latLng.lat = event.latlng.lat;
-        locations[1].latLng.lng = event.latlng.lng;
+        locations[1].lat = event.latlng.lat;
+        locations[1].lng = event.latlng.lng;
 
         onClick = true;
 
@@ -129,4 +160,9 @@ window.onload = function () {
 
     })
 
+}
+
+function getCookieValue(a) {
+    var b = document.cookie.match('(^|;)\\s*' + a + '\\s*=\\s*([^;]+)');
+    return b ? b.pop() : '';
 }
